@@ -1,0 +1,8 @@
+.build/
+dist/
+.DS_Store
+.swiftpm/
+mcp-server/node_modules/
+.mcp-api-key
+.mcp-runtime/
+.env

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "progress-tracker": {
+      "command": "node",
+      "args": ["mcp-server/index.js"],
+      "cwd": ".",
+      "exposure": "direct",
+      "description": "Read and manage tasks in the local Progress Tracker macOS app."
+    }
+  }
+}
