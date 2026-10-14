@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Progress Tracker brand mark — vector source of truth.
+  The lime-to-teal accent gradient (matching the in-app header and the
+  app's accent LinearGradient) on a rounded squircle, with the bold
+  checkmark that stands for completed progress.
+
+  The shipped macOS icon (Resources/AppIcon.icns) is produced by
+  scripts/generate-icon.py, which reproduces this same geometry.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#BAFF59"/>
+      <stop offset="1" stop-color="#45F0D6"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="512" y1="100" x2="512" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="body">
+      <rect x="100" y="100" width="824" height="824" rx="184" ry="184"/>
+    </clipPath>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="184" ry="184" fill="url(#accent)"/>
+  <rect x="100" y="100" width="824" height="824" fill="url(#sheen)" clip-path="url(#body)"/>
+
+  <polyline points="328,543 463,678 729,381"
+            fill="none" stroke="#103629" stroke-width="84"
+            stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

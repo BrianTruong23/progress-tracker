@@ -22,6 +22,18 @@ You can drag `dist/Progress Tracker.app` into your **Applications** folder. The 
 
 If macOS blocks the first launch, right-click the app, choose **Open**, then choose **Open** again.
 
+## App icon
+
+The app ships with a brand icon in `Resources/` — the lime-to-teal accent gradient on a rounded squircle with the checkmark that stands for completed progress, matching the in-app header. `build-app.sh` copies `Resources/AppIcon.icns` into the bundle so it appears in the Dock and Finder.
+
+The icon is generated from a single source so it can be rebuilt on any platform (only [Pillow](https://pypi.org/project/Pillow/) is required, no macOS-only tools):
+
+```bash
+python3 scripts/generate-icon.py
+```
+
+`Resources/AppIcon.svg` is the editable vector source of the same mark.
+
 ## Let a bot access tasks with MCP
 
 The included MCP server gives a bot tools to manage tasks, projects, priorities, due dates, calendar events, and Focus mode. Focus tools can read status, choose a duration, start, pause, resume, or reset the timer while keeping the app synchronized.
