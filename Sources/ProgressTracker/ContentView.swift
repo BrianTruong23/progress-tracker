@@ -36,6 +36,7 @@ extension TaskPriority {
 
 enum AppTab: String, CaseIterable, Identifiable {
     case tasks = "Tasks"
+    case projects = "Projects"
     case calendar = "Calendar"
     case focus = "Focus"
 
@@ -43,6 +44,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .tasks: "checkmark.circle"
+        case .projects: "square.grid.2x2.fill"
         case .calendar: "calendar"
         case .focus: "leaf.fill"
         }
@@ -64,11 +66,19 @@ struct ContentView: View {
     @AppStorage("progressStyle") private var progressStyle: ProgressDisplayStyle = .ring
     @State private var newTask = ""
     @State private var newProject = "Inbox"
+    @State private var newProjectDraft = ""
+    @State private var isCreatingProject = false
     @State private var newPriority: TaskPriority = .medium
     @State private var newDueDate = Date.now
+    @State private var newLink = ""
+    @State private var newLocation = ""
     @State private var selectedTab: AppTab = .tasks
-    @State private var filter: TaskFilter = .all
+    @State private var filter: TaskFilter = .open
     @State private var selectedProject = "All Projects"
+    @State private var showEndDayConfirmation = false
+    @State private var endDayMessage: String?
+    @State private var editingTask: TaskItem?
+    @State private var showCompletedTasks = false
     @FocusState private var isInputFocused: Bool
 
     private let accent = LinearGradient(
@@ -78,22 +88,35 @@ struct ContentView: View {
     )
 
     private var projects: [String] {
-        ["All Projects"] + Set(store.tasks.map(\.project)).sorted()
+        ["All Projects"] + store.projects
     }
 
     private var filteredTasks: [TaskItem] {
         let byStatus: [TaskItem]
         switch filter {
-        case .all: byStatus = store.tasks
-        case .open: byStatus = store.tasks.filter { !$0.isCompleted }
-        case .done: byStatus = store.tasks.filter(\.isCompleted)
+        case .all, .open: byStatus = store.tasks.filter { !$0.isCompleted }
+        case .done: byStatus = []
         }
         return byStatus
             .filter { selectedProject == "All Projects" || $0.project == selectedProject }
             .sorted {
-                if $0.isCompleted != $1.isCompleted { return !$0.isCompleted }
+                let firstDueDay = Calendar.current.startOfDay(for: $0.dueDate)
+                let secondDueDay = Calendar.current.startOfDay(for: $1.dueDate)
+                if firstDueDay != secondDueDay { return firstDueDay < secondDueDay }
                 if $0.priority.rank != $1.priority.rank { return $0.priority.rank > $1.priority.rank }
-                return $0.createdAt > $1.createdAt
+                return $0.createdAt < $1.createdAt
+            }
+    }
+
+    private var completedFilteredTasks: [TaskItem] {
+        store.tasks
+            .filter { $0.isCompleted && (selectedProject == "All Projects" || $0.project == selectedProject) }
+            .sorted {
+                let firstDueDay = Calendar.current.startOfDay(for: $0.dueDate)
+                let secondDueDay = Calendar.current.startOfDay(for: $1.dueDate)
+                if firstDueDay != secondDueDay { return firstDueDay < secondDueDay }
+                if $0.priority.rank != $1.priority.rank { return $0.priority.rank > $1.priority.rank }
+                return $0.createdAt < $1.createdAt
             }
     }
 
@@ -125,6 +148,10 @@ struct ContentView: View {
                         .padding(.horizontal, 30)
                         .padding(.bottom, 30)
                     }
+                case .projects:
+                    ProjectsView(store: store)
+                        .padding(.horizontal, 30)
+                        .padding(.bottom, 30)
                 case .calendar:
                     CalendarView(store: store)
                         .padding(.horizontal, 30)
@@ -139,6 +166,25 @@ struct ContentView: View {
         .preferredColorScheme(appAppearance.colorScheme)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             store.reloadFromDisk()
+        }
+        .alert("End the day?", isPresented: $showEndDayConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Move to Tomorrow") {
+                let moved = store.endDay()
+                withAnimation { endDayMessage = moved == 1 ? "1 task moved to tomorrow" : "\(moved) tasks moved to tomorrow" }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    withAnimation { endDayMessage = nil }
+                }
+            }
+        } message: {
+            Text("Every unfinished task due today will be moved to tomorrow. Completed and future tasks will stay where they are.")
+        }
+        .sheet(item: $editingTask) { task in
+            EditTaskSheet(
+                task: task,
+                projects: projects.filter { $0 != "All Projects" },
+                onSave: { store.update($0) }
+            )
         }
     }
 
@@ -279,14 +325,16 @@ struct ContentView: View {
             }
 
             HStack(alignment: .lastTextBaseline, spacing: 10) {
-                Text("\(store.tasks.count)")
+                Text("\(Int((store.progress * 100).rounded()))%")
                     .font(.system(size: 38, weight: .bold, design: .rounded))
-                Text("total tasks")
+                    .foregroundStyle(Color(red: 0.15, green: 0.67, blue: 0.43))
+                Text("complete")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(Int((store.progress * 100).rounded()))%")
+                Text("\(store.completedCount) of \(store.tasks.count) tasks")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
             }
 
             GeometryReader { geometry in
@@ -301,15 +349,15 @@ struct ContentView: View {
 
                     Capsule()
                         .fill(LinearGradient(
-                            colors: [Color(red: 0.15, green: 0.72, blue: 0.86), Color(red: 0.25, green: 0.42, blue: 1.0)],
+                            colors: [Color(red: 0.05, green: 0.48, blue: 0.30), Color(red: 0.30, green: 0.90, blue: 0.68)],
                             startPoint: .leading,
                             endPoint: .trailing
                         ))
                         .frame(width: max(store.tasks.isEmpty ? 0 : 8, geometry.size.width * store.progress))
-                        .shadow(color: Color.blue.opacity(0.25), radius: 7)
+                        .shadow(color: Color.mint.opacity(0.30), radius: 7)
 
                     Rectangle()
-                        .fill(Color(red: 0.24, green: 0.50, blue: 1.0))
+                        .fill(Color(red: 0.18, green: 0.72, blue: 0.48))
                         .frame(width: 3, height: 30)
                         .offset(x: max(0, min(geometry.size.width - 3, geometry.size.width * store.progress - 1.5)))
                 }
@@ -461,10 +509,66 @@ struct ContentView: View {
                 Label("Project", systemImage: "folder")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                TextField("Inbox", text: $newProject)
-                    .textFieldStyle(.plain)
+                Menu {
+                    ForEach(projects.filter { $0 != "All Projects" }, id: \.self) { project in
+                        Button {
+                            newProject = project
+                            isCreatingProject = false
+                        } label: {
+                            if project == newProject {
+                                Label(project, systemImage: "checkmark")
+                            } else {
+                                Text(project)
+                            }
+                        }
+                    }
+                    Divider()
+                    Button {
+                        newProjectDraft = ""
+                        isCreatingProject = true
+                    } label: {
+                        Label("New Project…", systemImage: "plus")
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(newProject)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
                     .font(.system(size: 12, weight: .medium))
-                    .frame(maxWidth: 180)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 7))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+
+                if isCreatingProject {
+                    HStack(spacing: 4) {
+                        TextField("New project", text: $newProjectDraft)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 110)
+                            .onSubmit(createProject)
+                        Button(action: createProject) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.green)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(newProjectDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button {
+                            isCreatingProject = false
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 5)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
+                }
 
                 Spacer()
 
@@ -484,6 +588,27 @@ struct ContentView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .datePickerStyle(.compact)
                     .fixedSize()
+            }
+            .padding(.horizontal, 7)
+
+            Divider().opacity(0.25)
+
+            HStack(spacing: 14) {
+                Label("Link", systemImage: "link")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextField("Website or meeting link (optional)", text: $newLink)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+
+                Divider().frame(height: 18)
+
+                Label("Location", systemImage: "mappin.and.ellipse")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextField("Place or address (optional)", text: $newLocation)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
             }
             .padding(.horizontal, 7)
         }
@@ -528,10 +653,31 @@ struct ContentView: View {
 
                 HStack(spacing: 2) {
                     ForEach(TaskFilter.allCases) { option in
-                        Button(option.rawValue) { filter = option }
-                            .buttonStyle(FilterButtonStyle(isSelected: filter == option))
+                        Button(option.rawValue) {
+                            filter = option
+                            showCompletedTasks = false
+                        }
+                        .buttonStyle(FilterButtonStyle(isSelected: filter == option))
                     }
                 }
+
+                if let endDayMessage {
+                    Label(endDayMessage, systemImage: "arrow.right.circle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.green)
+                        .transition(.opacity)
+                }
+
+                Button {
+                    showEndDayConfirmation = true
+                } label: {
+                    Label("End day", systemImage: "moon.stars.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(store.openTasksDueTodayCount == 0)
+                .help(store.openTasksDueTodayCount == 0 ? "No unfinished tasks due today" : "Move today's unfinished tasks to tomorrow")
 
                 if store.completedCount > 0 {
                     Button("Clear done") { withAnimation { store.clearCompleted() } }
@@ -542,17 +688,73 @@ struct ContentView: View {
                 }
             }
 
-            if filteredTasks.isEmpty {
+            if filteredTasks.isEmpty && (filter != .done || completedFilteredTasks.isEmpty) {
                 emptyState
-            } else {
+            } else if !filteredTasks.isEmpty {
                 LazyVStack(spacing: 8) {
                     ForEach(filteredTasks) { task in
-                        TaskRow(task: task, onToggle: { withAnimation { store.toggle(task) } }, onDelete: { withAnimation { store.delete(task) } })
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        taskRow(task)
+                    }
+                }
+            }
+
+            if !completedFilteredTasks.isEmpty {
+                completedTasksDisclosure
+            }
+        }
+    }
+
+    private var completedTasksDisclosure: some View {
+        VStack(spacing: 8) {
+            Button {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
+                    showCompletedTasks.toggle()
+                }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .rotationEffect(.degrees(showCompletedTasks ? 90 : 0))
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color(red: 0.38, green: 0.78, blue: 0.58))
+                    Text("Completed")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                    Text("\(completedFilteredTasks.count)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
+                    Spacer()
+                    Text(showCompletedTasks ? "Collapse" : "Show tasks")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 13))
+
+            if showCompletedTasks {
+                LazyVStack(spacing: 8) {
+                    ForEach(completedFilteredTasks) { task in
+                        taskRow(task)
                     }
                 }
             }
         }
+    }
+
+    private func taskRow(_ task: TaskItem) -> some View {
+        TaskRow(
+            task: task,
+            onToggle: { withAnimation { store.toggle(task) } },
+            onEdit: { editingTask = task },
+            onDelete: { withAnimation { store.delete(task) } }
+        )
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     private var emptyState: some View {
@@ -578,12 +780,29 @@ struct ContentView: View {
         return "Small steps, big progress"
     }
 
+    private func createProject() {
+        let cleaned = newProjectDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        newProject = String(cleaned.prefix(100))
+        newProjectDraft = ""
+        isCreatingProject = false
+    }
+
     private func addTask() {
         guard !newTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-            store.add(newTask, project: newProject, priority: newPriority, dueDate: newDueDate)
+            store.add(
+                newTask,
+                project: newProject,
+                priority: newPriority,
+                dueDate: newDueDate,
+                link: newLink,
+                location: newLocation
+            )
             newTask = ""
-            filter = .all
+            newLink = ""
+            newLocation = ""
+            filter = .open
         }
         isInputFocused = true
     }
@@ -664,9 +883,140 @@ private struct ProjectProgressCard: View {
     }
 }
 
+private struct EditTaskSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var task: TaskItem
+    let projects: [String]
+    let onSave: (TaskItem) -> Void
+
+    init(task: TaskItem, projects: [String], onSave: @escaping (TaskItem) -> Void) {
+        _task = State(initialValue: task)
+        self.projects = projects
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Edit task")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                    Text("Update the task details, schedule, and status.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .frame(width: 26, height: 26)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                fieldLabel("Task name", icon: "checkmark.circle")
+                TextField("Task name", text: $task.title)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 13, weight: .medium))
+            }
+
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 7) {
+                    fieldLabel("Project", icon: "folder")
+                    HStack(spacing: 6) {
+                        TextField("Project", text: $task.project)
+                            .textFieldStyle(.roundedBorder)
+                        Menu {
+                            ForEach(projects, id: \.self) { project in
+                                Button(project) { task.project = project }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .frame(width: 24, height: 22)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    fieldLabel("Priority", icon: "flag")
+                    Picker("Priority", selection: $task.priority) {
+                        ForEach(TaskPriority.allCases) { priority in
+                            Text(priority.rawValue).tag(priority)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            HStack(alignment: .bottom, spacing: 16) {
+                VStack(alignment: .leading, spacing: 7) {
+                    fieldLabel("Due date", icon: "calendar")
+                    DatePicker("Due date", selection: $task.dueDate, displayedComponents: .date)
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                }
+                Spacer()
+                Toggle(isOn: $task.isCompleted) {
+                    Label(task.isCompleted ? "Completed" : "Open", systemImage: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .toggleStyle(.switch)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                fieldLabel("Link", icon: "link")
+                TextField("Website or meeting link", text: Binding(
+                    get: { task.link ?? "" },
+                    set: { task.link = $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                fieldLabel("Location", icon: "mappin.and.ellipse")
+                TextField("Place or address", text: Binding(
+                    get: { task.location ?? "" },
+                    set: { task.location = $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+            }
+
+            HStack {
+                Text("Created \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save Changes") {
+                    onSave(task)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(red: 0.24, green: 0.70, blue: 0.48))
+                .keyboardShortcut(.defaultAction)
+                .disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 500, height: 520)
+    }
+
+    private func fieldLabel(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.secondary)
+    }
+}
+
 private struct TaskRow: View {
     let task: TaskItem
     let onToggle: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
     @State private var isHovered = false
 
@@ -705,21 +1055,53 @@ private struct TaskRow: View {
                 }
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.tertiary)
+
+                if task.link != nil || task.location != nil {
+                    HStack(spacing: 10) {
+                        if let link = task.link, let url = URL(string: link) {
+                            Link(destination: url) {
+                                Label("Open link", systemImage: "arrow.up.right.square")
+                            }
+                            .help(link)
+                        }
+                        if let location = task.location, let url = mapsURL(for: location) {
+                            Link(destination: url) {
+                                Label(location, systemImage: "mappin.and.ellipse")
+                                    .lineLimit(1)
+                            }
+                            .help("Open in Maps")
+                        }
+                    }
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.62, blue: 0.72))
+                }
             }
 
             Spacer()
 
             if isHovered {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .background(Color.primary.opacity(0.055), in: Circle())
+                HStack(spacing: 5) {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                            .background(Color.primary.opacity(0.055), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit task")
+
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                            .background(Color.primary.opacity(0.055), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete task")
                 }
-                .buttonStyle(.plain)
                 .transition(.opacity)
-                .help("Delete task")
             }
         }
         .padding(.horizontal, 16)
@@ -733,9 +1115,22 @@ private struct TaskRow: View {
         .onHover { hovering in withAnimation(.easeOut(duration: 0.14)) { isHovered = hovering } }
         .contextMenu {
             Button(task.isCompleted ? "Mark as Open" : "Mark as Done", action: onToggle)
+            Button("Edit Task…", systemImage: "pencil", action: onEdit)
+            if let link = task.link, let url = URL(string: link) {
+                Link("Open Link", destination: url)
+            }
+            if let location = task.location, let url = mapsURL(for: location) {
+                Link("Open Location in Maps", destination: url)
+            }
             Divider()
             Button("Delete", role: .destructive, action: onDelete)
         }
+    }
+
+    private func mapsURL(for location: String) -> URL? {
+        var components = URLComponents(string: "https://maps.apple.com/")
+        components?.queryItems = [URLQueryItem(name: "q", value: location)]
+        return components?.url
     }
 }
 

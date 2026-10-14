@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CalendarView: View {
     @ObservedObject var store: TaskStore
+    @StateObject private var googleCalendar = GoogleCalendarSync()
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedDate = Date.now
     @State private var displayedMonth = Calendar.current.dateInterval(of: .month, for: .now)!.start
@@ -26,6 +27,26 @@ struct CalendarView: View {
                 }
                 .padding(.bottom, 10)
             }
+        }
+        .onAppear {
+            if googleCalendar.isConnected { googleCalendar.loadEvents(containing: displayedMonth) }
+        }
+        .onChange(of: displayedMonth) {
+            if googleCalendar.isConnected { googleCalendar.loadEvents(containing: displayedMonth) }
+        }
+        .onChange(of: googleCalendar.selectedCalendarID) {
+            if googleCalendar.isConnected { googleCalendar.loadEvents(containing: displayedMonth) }
+        }
+        .onChange(of: googleCalendar.accessState) {
+            if googleCalendar.isConnected { googleCalendar.loadEvents(containing: displayedMonth) }
+        }
+        .alert("Calendar Sync Error", isPresented: Binding(
+            get: { googleCalendar.errorMessage != nil },
+            set: { if !$0 { googleCalendar.errorMessage = nil } }
+        )) {
+            Button("OK") { googleCalendar.errorMessage = nil }
+        } message: {
+            Text(googleCalendar.errorMessage ?? "The calendar could not be synchronized.")
         }
     }
 
@@ -79,7 +100,7 @@ struct CalendarView: View {
     private func dayButton(_ date: Date) -> some View {
         let selected = calendar.isDate(date, inSameDayAs: selectedDate)
         let today = calendar.isDateInToday(date)
-        let hasEvents = !store.events(on: date).isEmpty
+        let hasEvents = !store.events(on: date).isEmpty || !googleCalendar.events(on: date).isEmpty
         let hasTasks = !store.tasks(on: date).isEmpty
 
         return Button {
@@ -128,7 +149,9 @@ struct CalendarView: View {
 
     private var eventsSection: some View {
         VStack(alignment: .leading, spacing: 11) {
-            sectionTitle("EVENTS", icon: "calendar.badge.clock", count: dayEvents.count)
+            sectionTitle("EVENTS", icon: "calendar.badge.clock", count: dayEvents.count + visibleGoogleEvents.count)
+
+            googleCalendarControl
 
             VStack(spacing: 9) {
                 HStack(spacing: 8) {
@@ -176,7 +199,7 @@ struct CalendarView: View {
             .padding(10)
             .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
 
-            if dayEvents.isEmpty {
+            if dayEvents.isEmpty && visibleGoogleEvents.isEmpty {
                 emptyRow("No events planned", icon: "calendar")
             } else {
                 ForEach(dayEvents) { event in
@@ -197,7 +220,35 @@ struct CalendarView: View {
                             .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button { withAnimation { store.deleteEvent(event) } } label: {
+                        Button { deleteLocalEvent(event) } label: {
+                            Image(systemName: "trash").font(.system(size: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                }
+
+                ForEach(visibleGoogleEvents) { event in
+                    HStack(spacing: 11) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color(red: 0.26, green: 0.52, blue: 0.96))
+                            .frame(width: 4, height: 31)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.title)
+                                .font(.system(size: 13, weight: .semibold))
+                            HStack(spacing: 6) {
+                                Text(event.startDate.formatted(.dateTime.hour().minute()))
+                                Label(event.calendarTitle, systemImage: "g.circle.fill")
+                                    .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+                            }
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button { googleCalendar.deleteEvent(identifier: event.id) } label: {
                             Image(systemName: "trash").font(.system(size: 10))
                         }
                         .buttonStyle(.plain)
@@ -211,6 +262,86 @@ struct CalendarView: View {
         }
         .padding(16)
         .background(cardBackground(radius: 18))
+    }
+
+    @ViewBuilder
+    private var googleCalendarControl: some View {
+        HStack(spacing: 9) {
+            switch googleCalendar.accessState {
+            case .connected:
+                Image(systemName: "g.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Google Calendar connected")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                    Text("New events sync automatically")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Menu {
+                    ForEach(googleCalendar.calendars) { calendar in
+                        Button {
+                            googleCalendar.selectCalendar(calendar.id)
+                        } label: {
+                            if calendar.id == googleCalendar.selectedCalendarID {
+                                Label("\(calendar.title) — \(calendar.account)", systemImage: "checkmark")
+                            } else {
+                                Text("\(calendar.title) — \(calendar.account)")
+                            }
+                        }
+                    }
+                } label: {
+                    Label(googleCalendar.selectedCalendarName, systemImage: "calendar")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                Button {
+                    googleCalendar.loadEvents(containing: displayedMonth)
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .help("Refresh Google Calendar")
+
+            case .requesting:
+                ProgressView().controlSize(.small)
+                Text("Connecting to Calendar…")
+                    .font(.system(size: 10, weight: .medium))
+                Spacer()
+
+            case .notRequested:
+                Image(systemName: "g.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+                Text("Show and create events in your Google Calendar")
+                    .font(.system(size: 10, weight: .medium))
+                Spacer()
+                Button("Connect Google Calendar") { googleCalendar.connect() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(Color(red: 0.26, green: 0.52, blue: 0.96))
+
+            case .unavailable:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.orange)
+                Text("Add your Google account in System Settings → Internet Accounts, then reopen the app.")
+                    .font(.system(size: 9, weight: .medium))
+                Spacer()
+
+            case .denied:
+                Image(systemName: "lock.fill")
+                    .foregroundStyle(Color.orange)
+                Text("Calendar access is off. Enable Progress Tracker in System Settings → Privacy & Security → Calendars.")
+                    .font(.system(size: 9, weight: .medium))
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 11))
     }
 
     private var tasksSection: some View {
@@ -243,6 +374,22 @@ struct CalendarView: View {
                             }
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(.tertiary)
+
+                            if task.link != nil || task.location != nil {
+                                HStack(spacing: 8) {
+                                    if let link = task.link, let url = URL(string: link) {
+                                        Link("Open link", destination: url)
+                                    }
+                                    if let location = task.location, let url = mapsURL(for: location) {
+                                        Link(destination: url) {
+                                            Label(location, systemImage: "mappin")
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Color.cyan)
+                            }
                         }
                         Spacer()
                     }
@@ -258,6 +405,10 @@ struct CalendarView: View {
 
     private var dayEvents: [CalendarEvent] { store.events(on: selectedDate) }
     private var dayTasks: [TaskItem] { store.tasks(on: selectedDate) }
+    private var visibleGoogleEvents: [SyncedCalendarEvent] {
+        let linkedIdentifiers = Set(dayEvents.compactMap(\.externalEventIdentifier))
+        return googleCalendar.events(on: selectedDate).filter { !linkedIdentifiers.contains($0.id) }
+    }
 
     private var monthDays: [Date?] {
         guard let range = calendar.range(of: .day, in: .month, for: displayedMonth) else { return [] }
@@ -266,6 +417,12 @@ struct CalendarView: View {
         return Array(repeating: nil, count: leading) + range.compactMap {
             calendar.date(byAdding: .day, value: $0 - 1, to: displayedMonth)
         }.map(Optional.some)
+    }
+
+    private func mapsURL(for location: String) -> URL? {
+        var components = URLComponents(string: "https://maps.apple.com/")
+        components?.queryItems = [URLQueryItem(name: "q", value: location)]
+        return components?.url
     }
 
     private func moveMonth(_ amount: Int) {
@@ -287,9 +444,25 @@ struct CalendarView: View {
             ? (recurrenceWeekdays.isEmpty ? [selectedWeekday] : Array(recurrenceWeekdays))
             : []
         withAnimation {
-            store.addEvent(newEventTitle, at: date, recurrence: newEventRecurrence, weekdays: weekdays)
+            if let localEvent = store.addEvent(newEventTitle, at: date, recurrence: newEventRecurrence, weekdays: weekdays),
+               googleCalendar.isConnected,
+               let externalIdentifier = googleCalendar.addEvent(
+                    title: localEvent.title,
+                    startDate: date,
+                    recurrence: newEventRecurrence,
+                    weekdays: weekdays
+               ) {
+                store.linkEvent(localEvent.id, toExternalIdentifier: externalIdentifier)
+            }
             newEventTitle = ""
         }
+    }
+
+    private func deleteLocalEvent(_ event: CalendarEvent) {
+        if let identifier = event.externalEventIdentifier {
+            googleCalendar.deleteEvent(identifier: identifier)
+        }
+        withAnimation { store.deleteEvent(event) }
     }
 
     private func toggleWeekday(_ weekday: Int) {

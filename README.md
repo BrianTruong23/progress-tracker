@@ -24,15 +24,9 @@ If macOS blocks the first launch, right-click the app, choose **Open**, then cho
 
 ## App icon
 
-The app ships with a brand icon in `Resources/` — the lime-to-teal accent gradient on a rounded squircle with the checkmark that stands for completed progress, matching the in-app header. `build-app.sh` copies `Resources/AppIcon.icns` into the bundle so it appears in the Dock and Finder.
+The app ships with a garden-themed progress icon in `Resources/`: a growing tree, completion ring, and checkmark on a lime-to-teal squircle. `build-app.sh` copies `Resources/AppIcon.icns` into the bundle so it appears in the Dock and Finder.
 
-The icon is generated from a single source so it can be rebuilt on any platform (only [Pillow](https://pypi.org/project/Pillow/) is required, no macOS-only tools):
-
-```bash
-python3 scripts/generate-icon.py
-```
-
-`Resources/AppIcon.svg` is the editable vector source of the same mark.
+`Resources/AppIcon.svg` is the editable vector source, `AppIcon-1024.png` is the master bitmap, and `AppIcon.iconset/` contains the macOS icon sizes used to produce `AppIcon.icns`.
 
 ## Let a bot access tasks with MCP
 

@@ -1,14 +1,28 @@
+import AppKit
 import Combine
 import Foundation
+
+enum FocusPhase: String, Codable {
+    case work
+    case breakTime
+}
 
 struct PlantedTree: Codable, Identifiable, Equatable {
     let id: UUID
     let plantedAt: Date
     let focusMinutes: Int
     let variant: Int
+    let sessionName: String?
+    let thoughts: [String]?
 
     var name: String {
         ["Cherry Bloom", "Golden Bloom", "Lavender Bloom", "Spring Bloom"][variant % 4]
+    }
+
+    var nickname: String {
+        guard let sessionName = sessionName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionName.isEmpty else { return name }
+        return sessionName
     }
 }
 
@@ -24,6 +38,10 @@ private struct StoredFocusSession: Codable {
     var plantedTrees: [PlantedTree]?
     var currentTreeClaimed: Bool?
     var activeTreeVariant: Int?
+    var phase: FocusPhase?
+    var totalWaterings: Int?
+    var sessionName: String?
+    var sessionThoughts: [String]?
 }
 
 @MainActor
@@ -37,6 +55,10 @@ final class FocusSessionStore: ObservableObject {
     @Published private(set) var plantedTrees: [PlantedTree] = []
     @Published private(set) var currentTreeClaimed = false
     @Published private(set) var activeTreeVariant = 0
+    @Published private(set) var phase: FocusPhase = .work
+    @Published private(set) var totalWaterings = 0
+    @Published private(set) var sessionName = ""
+    @Published private(set) var sessionThoughts: [String] = []
 
     private var endDate: Date?
     private let saveURL: URL
@@ -49,8 +71,9 @@ final class FocusSessionStore: ObservableObject {
         reloadFromDisk()
     }
 
-    var totalSeconds: Int { selectedMinutes * 60 }
+    var totalSeconds: Int { phase == .breakTime ? 5 * 60 : selectedMinutes * 60 }
     var currentTreeVariant: Int { activeTreeVariant }
+    var isBreak: Bool { phase == .breakTime }
     var progress: Double {
         guard hasStarted else { return 0 }
         return min(1, max(0, 1 - Double(remainingSeconds) / Double(totalSeconds)))
@@ -66,6 +89,10 @@ final class FocusSessionStore: ObservableObject {
     func toggle() {
         reloadFromDisk()
         if isFinished {
+            if phase == .breakTime {
+                startNextWork()
+                return
+            }
             guard currentTreeClaimed else { return }
             reset(saveAfter: false)
             begin()
@@ -78,6 +105,7 @@ final class FocusSessionStore: ObservableObject {
 
     func start(minutes: Int? = nil) {
         reloadFromDisk()
+        phase = .work
         if let minutes, [15, 25, 45].contains(minutes) {
             selectedMinutes = minutes
         }
@@ -85,10 +113,30 @@ final class FocusSessionStore: ObservableObject {
         hasStarted = true
         isFinished = false
         activeTreeVariant = Int.random(in: 0..<4)
+        sessionName = ""
+        sessionThoughts = []
         currentTreeClaimed = false
         isRunning = true
         endDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
         save()
+    }
+
+    func startBreak() {
+        reloadFromDisk()
+        guard phase == .work, isFinished, currentTreeClaimed else { return }
+        phase = .breakTime
+        remainingSeconds = 5 * 60
+        hasStarted = true
+        isFinished = false
+        isRunning = true
+        endDate = Date().addingTimeInterval(5 * 60)
+        save()
+    }
+
+    func startNextWork() {
+        phase = .work
+        reset(saveAfter: false)
+        begin()
     }
 
     func pause() {
@@ -111,14 +159,30 @@ final class FocusSessionStore: ObservableObject {
         reset(saveAfter: true)
     }
 
+    func setSessionName(_ name: String) {
+        sessionName = String(name.prefix(80))
+        save()
+    }
+
+    func completeWatering(thought: String) {
+        totalWaterings += 1
+        let trimmed = thought.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            sessionThoughts.append(String(trimmed.prefix(500)))
+        }
+        save()
+    }
+
     func claimTree() {
         reloadFromDisk()
-        guard isFinished, !currentTreeClaimed else { return }
+        guard phase == .work, isFinished, !currentTreeClaimed else { return }
         plantedTrees.append(PlantedTree(
             id: UUID(),
             plantedAt: Date(),
             focusMinutes: selectedMinutes,
-            variant: currentTreeVariant
+            variant: currentTreeVariant,
+            sessionName: sessionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : sessionName,
+            thoughts: sessionThoughts.isEmpty ? nil : sessionThoughts
         ))
         currentTreeClaimed = true
         save()
@@ -132,8 +196,11 @@ final class FocusSessionStore: ObservableObject {
             isRunning = false
             endDate = nil
             isFinished = true
-            currentTreeClaimed = false
-            completedSessions += 1
+            if phase == .work {
+                currentTreeClaimed = false
+                completedSessions += 1
+            }
+            playCompletionSound()
         }
         save()
     }
@@ -152,17 +219,23 @@ final class FocusSessionStore: ObservableObject {
         // Sessions completed before collections were added remain claimable.
         currentTreeClaimed = stored.currentTreeClaimed ?? !stored.isFinished
         activeTreeVariant = stored.activeTreeVariant ?? max(0, stored.completedSessions - (stored.isFinished ? 1 : 0)) % 4
+        phase = stored.phase ?? .work
+        totalWaterings = stored.totalWaterings ?? 0
+        sessionName = stored.sessionName ?? ""
+        sessionThoughts = stored.sessionThoughts ?? []
         if isRunning { updateRemainingTime() }
     }
 
     private func begin() {
-        if !hasStarted {
+        if !hasStarted && phase == .work {
             activeTreeVariant = Int.random(in: 0..<4)
         }
         hasStarted = true
         isRunning = true
         isFinished = false
-        currentTreeClaimed = false
+        if phase == .work {
+            currentTreeClaimed = false
+        }
         endDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
         save()
     }
@@ -172,12 +245,26 @@ final class FocusSessionStore: ObservableObject {
         remainingSeconds = max(0, Int(ceil(endDate.timeIntervalSinceNow)))
     }
 
+    private func playCompletionSound() {
+        // Use a distinct chime so it is easy to tell work and rest endings apart.
+        let soundName = phase == .breakTime ? "Ping" : "Glass"
+        if let sound = NSSound(named: NSSound.Name(soundName)) {
+            sound.play()
+        } else {
+            NSSound.beep()
+        }
+    }
+
     private func reset(saveAfter: Bool) {
         isRunning = false
         endDate = nil
         hasStarted = false
         isFinished = false
         currentTreeClaimed = false
+        if phase == .work {
+            sessionName = ""
+            sessionThoughts = []
+        }
         remainingSeconds = totalSeconds
         if saveAfter { save() }
     }
@@ -193,7 +280,11 @@ final class FocusSessionStore: ObservableObject {
             completedSessions: completedSessions,
             plantedTrees: plantedTrees,
             currentTreeClaimed: currentTreeClaimed,
-            activeTreeVariant: activeTreeVariant
+            activeTreeVariant: activeTreeVariant,
+            phase: phase,
+            totalWaterings: totalWaterings,
+            sessionName: sessionName,
+            sessionThoughts: sessionThoughts
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
         try? data.write(to: saveURL, options: .atomic)

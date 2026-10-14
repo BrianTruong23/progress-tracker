@@ -1,32 +1,72 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Progress Tracker brand mark — vector source of truth.
-  The lime-to-teal accent gradient (matching the in-app header and the
-  app's accent LinearGradient) on a rounded squircle, with the bold
-  checkmark that stands for completed progress.
-
-  The shipped macOS icon (Resources/AppIcon.icns) is produced by
-  scripts/generate-icon.py, which reproduces this same geometry.
--->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="accent" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#BAFF59"/>
-      <stop offset="1" stop-color="#45F0D6"/>
+    <linearGradient id="bg" x1="150" y1="80" x2="860" y2="940" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D8F879"/>
+      <stop offset="0.48" stop-color="#77DD72"/>
+      <stop offset="1" stop-color="#27B596"/>
     </linearGradient>
-    <linearGradient id="sheen" x1="512" y1="100" x2="512" y2="520" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    <linearGradient id="hill" x1="260" y1="650" x2="760" y2="870" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#68C95A"/>
+      <stop offset="1" stop-color="#209B72"/>
     </linearGradient>
-    <clipPath id="body">
-      <rect x="100" y="100" width="824" height="824" rx="184" ry="184"/>
-    </clipPath>
+    <linearGradient id="trunk" x1="420" y1="410" x2="590" y2="785" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#99584B"/>
+      <stop offset="0.55" stop-color="#713D38"/>
+      <stop offset="1" stop-color="#4F302D"/>
+    </linearGradient>
+    <radialGradient id="canopy" cx="38%" cy="28%" r="75%">
+      <stop stop-color="#FFF8D9"/>
+      <stop offset="0.62" stop-color="#F7F2CA"/>
+      <stop offset="1" stop-color="#DDEAAE"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="34" stdDeviation="28" flood-color="#075D4D" flood-opacity=".28"/>
+    </filter>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="13" stdDeviation="11" flood-color="#254C39" flood-opacity=".20"/>
+    </filter>
+    <clipPath id="squircle"><rect x="62" y="62" width="900" height="900" rx="210"/></clipPath>
   </defs>
 
-  <rect x="100" y="100" width="824" height="824" rx="184" ry="184" fill="url(#accent)"/>
-  <rect x="100" y="100" width="824" height="824" fill="url(#sheen)" clip-path="url(#body)"/>
+  <!-- macOS-style rounded tile -->
+  <g filter="url(#shadow)">
+    <rect x="62" y="62" width="900" height="900" rx="210" fill="url(#bg)"/>
+  </g>
+  <g clip-path="url(#squircle)">
+    <circle cx="800" cy="218" r="230" fill="#FFFFFF" opacity=".12"/>
+    <circle cx="158" cy="770" r="280" fill="#106F62" opacity=".08"/>
+    <path d="M80 827C238 697 345 732 501 785C665 840 781 697 956 770V982H70Z" fill="url(#hill)" opacity=".82"/>
+    <path d="M136 827C306 758 414 812 529 844C663 881 770 791 903 807" fill="none" stroke="#E8FFB0" stroke-width="13" stroke-linecap="round" opacity=".27"/>
+  </g>
 
-  <polyline points="328,543 463,678 729,381"
-            fill="none" stroke="#103629" stroke-width="84"
-            stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- progress orbit: completion and continuity -->
+  <path d="M286 620A270 270 0 1 1 726 680" fill="none" stroke="#F7FFE8" stroke-width="38" stroke-linecap="round" opacity=".96"/>
+  <circle cx="727" cy="679" r="29" fill="#FFF8D1" filter="url(#softShadow)"/>
+  <path d="M714 679L724 689L743 667" fill="none" stroke="#238E69" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- tree: focus creates growth -->
+  <ellipse cx="503" cy="790" rx="169" ry="38" fill="#176C55" opacity=".23"/>
+  <g filter="url(#softShadow)">
+    <path d="M445 786C476 720 474 658 466 601C458 548 472 495 510 446C528 423 545 391 550 349C582 414 567 467 543 502C528 524 522 547 531 570C548 532 581 505 631 487C611 522 585 550 552 573C532 588 532 617 542 649C558 699 576 746 597 786C550 811 491 814 445 786Z" fill="url(#trunk)"/>
+    <path d="M493 750C513 659 492 589 503 525C511 478 542 450 552 394" fill="none" stroke="#C47865" stroke-width="19" stroke-linecap="round" opacity=".62"/>
+
+    <circle cx="379" cy="423" r="119" fill="url(#canopy)"/>
+    <circle cx="503" cy="328" r="143" fill="url(#canopy)"/>
+    <circle cx="638" cy="422" r="122" fill="url(#canopy)"/>
+    <circle cx="486" cy="456" r="143" fill="url(#canopy)"/>
+    <circle cx="577" cy="437" r="126" fill="url(#canopy)"/>
+  </g>
+
+  <!-- subtle blossom/achievement details -->
+  <g fill="#F39AA8">
+    <circle cx="372" cy="390" r="17"/><circle cx="427" cy="464" r="13"/>
+    <circle cx="505" cy="287" r="18"/><circle cx="562" cy="345" r="13"/>
+    <circle cx="637" cy="407" r="17"/><circle cx="590" cy="480" r="14"/>
+  </g>
+  <g fill="#FFD66B">
+    <circle cx="372" cy="390" r="6"/><circle cx="427" cy="464" r="5"/>
+    <circle cx="505" cy="287" r="6"/><circle cx="562" cy="345" r="5"/>
+    <circle cx="637" cy="407" r="6"/><circle cx="590" cy="480" r="5"/>
+  </g>
+  <path d="M274 733L298 757L346 703" fill="none" stroke="#F8FFE9" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
 </svg>

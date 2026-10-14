@@ -17,6 +17,8 @@ struct TaskItem: Identifiable, Codable, Equatable {
     var project: String
     var priority: TaskPriority
     var dueDate: Date
+    var link: String?
+    var location: String?
 
     init(
         id: UUID = UUID(),
@@ -25,7 +27,9 @@ struct TaskItem: Identifiable, Codable, Equatable {
         createdAt: Date = .now,
         project: String = "Inbox",
         priority: TaskPriority = .medium,
-        dueDate: Date = .now
+        dueDate: Date = .now,
+        link: String? = nil,
+        location: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -34,10 +38,12 @@ struct TaskItem: Identifiable, Codable, Equatable {
         self.project = project
         self.priority = priority
         self.dueDate = dueDate
+        self.link = link
+        self.location = location
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, isCompleted, createdAt, project, priority, dueDate
+        case id, title, isCompleted, createdAt, project, priority, dueDate, link, location
     }
 
     init(from decoder: Decoder) throws {
@@ -49,5 +55,7 @@ struct TaskItem: Identifiable, Codable, Equatable {
         project = try values.decodeIfPresent(String.self, forKey: .project) ?? "Inbox"
         priority = try values.decodeIfPresent(TaskPriority.self, forKey: .priority) ?? .medium
         dueDate = try values.decodeIfPresent(Date.self, forKey: .dueDate) ?? createdAt
+        link = try values.decodeIfPresent(String.self, forKey: .link)
+        location = try values.decodeIfPresent(String.self, forKey: .location)
     }
 }

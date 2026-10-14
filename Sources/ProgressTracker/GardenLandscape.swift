@@ -51,7 +51,7 @@ struct GardenLandscape: View {
                                 .shadow(color: .black.opacity(0.15), radius: 5, y: 4)
                         }
                         .buttonStyle(.plain)
-                        .help("\(tree.name) — \(tree.focusMinutes) focused minutes")
+                        .help("\(tree.nickname) — \(tree.name), \(tree.focusMinutes) focused minutes")
                         // The illustration's roots sit at 79% of its height.
                         .position(x: tileCenter.x, y: tileCenter.y - metrics.treeSize * 0.29)
                     }
@@ -74,6 +74,12 @@ struct GardenLandscape: View {
                             .padding(.vertical, 7)
                             .background(.ultraThinMaterial, in: Capsule())
                         Spacer()
+                        Label("Click a tree to view its notes", systemImage: "note.text")
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(.ultraThinMaterial, in: Capsule())
                     }
                     Spacer()
                 }
@@ -116,32 +122,67 @@ struct GardenLandscape: View {
     }
 
     private func treeInfo(_ tree: PlantedTree) -> some View {
-        HStack(spacing: 9) {
-            Circle()
-                .fill(treeColor(tree.variant).opacity(0.22))
-                .frame(width: 30, height: 30)
-                .overlay(Image(systemName: "tree.fill").foregroundStyle(treeColor(tree.variant)))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(tree.name)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                Text("\(tree.focusMinutes) focused minutes • Planted \(tree.plantedAt.formatted(.dateTime.month(.abbreviated).day()))")
-                    .font(.system(size: 9, weight: .medium))
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 9) {
+                Circle()
+                    .fill(treeColor(tree.variant).opacity(0.22))
+                    .frame(width: 30, height: 30)
+                    .overlay(Image(systemName: "tree.fill").foregroundStyle(treeColor(tree.variant)))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tree.nickname)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                    Text("\(tree.focusMinutes) min • \(tree.name) • \(tree.plantedAt.formatted(.dateTime.month(.abbreviated).day()))")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    selectedTreeID = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .padding(5)
+                        .background(Color.primary.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider().opacity(0.5)
+            Text("SESSION NOTES")
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .tracking(1)
+                .foregroundStyle(.secondary)
+
+            if let thoughts = tree.thoughts, !thoughts.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(thoughts.enumerated()), id: \.offset) { _, thought in
+                            HStack(alignment: .top, spacing: 7) {
+                                Image(systemName: "drop.fill")
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(Color.cyan)
+                                    .padding(.top, 2)
+                                Text(thought)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(8)
+                            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
+                .frame(maxHeight: 140)
+            } else {
+                Label("No notes were saved for this session.", systemImage: "note.text")
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            Button {
-                selectedTreeID = nil
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .padding(5)
-                    .background(Color.primary.opacity(0.07), in: Circle())
-            }
-            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.65)))
+        .padding(.horizontal, 13)
+        .padding(.vertical, 10)
+        .frame(width: 400)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.65)))
         .shadow(color: .black.opacity(0.10), radius: 12, y: 5)
     }
 

@@ -16,23 +16,26 @@ struct CalendarEvent: Identifiable, Codable, Equatable {
     var startDate: Date
     var recurrence: EventRecurrence
     var recurrenceWeekdays: [Int]
+    var externalEventIdentifier: String?
 
     init(
         id: UUID = UUID(),
         title: String,
         startDate: Date,
         recurrence: EventRecurrence = .none,
-        recurrenceWeekdays: [Int] = []
+        recurrenceWeekdays: [Int] = [],
+        externalEventIdentifier: String? = nil
     ) {
         self.id = id
         self.title = title
         self.startDate = startDate
         self.recurrence = recurrence
         self.recurrenceWeekdays = recurrenceWeekdays
+        self.externalEventIdentifier = externalEventIdentifier
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, startDate, recurrence, recurrenceWeekdays
+        case id, title, startDate, recurrence, recurrenceWeekdays, externalEventIdentifier
     }
 
     init(from decoder: Decoder) throws {
@@ -42,6 +45,7 @@ struct CalendarEvent: Identifiable, Codable, Equatable {
         startDate = try values.decode(Date.self, forKey: .startDate)
         recurrence = try values.decodeIfPresent(EventRecurrence.self, forKey: .recurrence) ?? .none
         recurrenceWeekdays = try values.decodeIfPresent([Int].self, forKey: .recurrenceWeekdays) ?? []
+        externalEventIdentifier = try values.decodeIfPresent(String.self, forKey: .externalEventIdentifier)
     }
 
     func occurs(on date: Date, calendar: Calendar = .current) -> Bool {
